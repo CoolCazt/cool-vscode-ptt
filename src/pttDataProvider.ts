@@ -11,20 +11,26 @@ export class PttTreeDataProvider implements vscode.TreeDataProvider<Node> {
   readonly onDidChangeTreeData: vscode.Event<Board | undefined> = this._onDidChangeTreeData.event;
 
   refresh(): void {
-		this._onDidChangeTreeData.fire();
+		this._onDidChangeTreeData.fire(undefined);
   }
 
   getTreeItem (element: Node): vscode.TreeItem {
 		return element;
 	}
 
-	async getChildren (element?: Node): Promise<Node[]> {
+  async getChildren (element?: Node): Promise<Node[]> {
     if (!this.ptt.state.login) {
       return [];
     }
 
-    let childrenFactory = new ChildrenFactory(element, this.ptt, this.ctx);
-    return childrenFactory.getChidrenType().getNode();
+    try {
+      let childrenFactory = new ChildrenFactory(element, this.ptt, this.ctx);
+      return await childrenFactory.getChidrenType().getNode();
+    } catch (err) {
+      vscode.window.showErrorMessage('載入資料時發生錯誤，可能是 PTT 格式變更或連線異常。請檢查 console log 或回報開發者。');
+      console.error('[PTT] getChildren error', err);
+      return [];
+    }
   }
 }
 
@@ -51,31 +57,37 @@ export class ArticleChildren implements IChildren
   
   async createArticleList(boardname: string)
   {
-    let articles = store.asList(boardname);
-    if (articles.length === 0) {
-      articles = await this.ptt.getArticles(boardname);
-      store.add(boardname, articles);
-    }
-  
-    let articlesList: (Article | LoadMoreArticle)[] = [
-      ...store.asList(boardname).map(article => new Article(
-        Number(article.sn),
-        `${article.push} ${article.status} ${article.title}`,
-        vscode.TreeItemCollapsibleState.None,
-        {
-          command: 'ptt.show-article',
-          title: '',
-          arguments: [article.sn, boardname]
-        }
-      )).sort((article1, article2) => { // revert sorting order
-        if (article1.sn > article2.sn) { return -1; }
-        else if (article1.sn < article2.sn) { return 1; }
-        return 0;
-      }),
-      new LoadMoreArticle(boardname)
-    ];
+    try {
+      let articles = store.asList(boardname);
+      if (articles.length === 0) {
+        articles = await this.ptt.getArticles(boardname);
+        store.add(boardname, articles);
+      }
 
-    return articlesList;
+      let articlesList: (Article | LoadMoreArticle)[] = [
+        ...store.asList(boardname).map(article => new Article(
+          Number(article.sn),
+          `${article.push} ${article.status} ${article.title}`,
+          vscode.TreeItemCollapsibleState.None,
+          {
+            command: 'ptt.show-article',
+            title: '',
+            arguments: [article.sn, boardname]
+          }
+        )).sort((article1, article2) => { // revert sorting order
+          if (article1.sn > article2.sn) { return -1; }
+          else if (article1.sn < article2.sn) { return 1; }
+          return 0;
+        }),
+        new LoadMoreArticle(boardname)
+      ];
+
+      return articlesList;
+    } catch (err) {
+      vscode.window.showErrorMessage('載入文章列表時發生錯誤，可能是 PTT 格式變更或連線異常。');
+      console.error('[PTT] createArticleList error', err);
+      return [];
+    }
   }
 }
 

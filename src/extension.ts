@@ -195,7 +195,14 @@ export async function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(vscode.commands.registerCommand('ptt.refresh-article', () => {
     ptt.resetSearchCondition();
-    pttProvider.refresh();
+    // pttProvider.refresh();
+    const boards = store.getBoardNames();
+    boards.forEach(async (boardname: string) => {
+      store.release(boardname);
+      const articles = await ptt.getArticles(boardname);
+      store.add(boardname, articles);
+      pttProvider.refresh();
+    });
   }));
 
   context.subscriptions.push(vscode.commands.registerCommand('ptt.load-more-article', async (boardname: string) => {
@@ -232,6 +239,30 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.window.showInformationMessage('完成搜尋');
 
     store.add(board.boardname, pushArticles);
+    pttProvider.refresh();
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand('ptt.search-board-by-title', async (board: Board) => {
+    const title = await vscode.window.showInputBox({
+      prompt: '輸入文章標題關鍵字',
+      placeHolder: '例如：閒聊'
+    });
+
+    if (!title) {
+      return;
+    }
+
+    if (store.isEmpty(board.boardname) === false)
+    {
+      store.release(board.boardname);
+    }
+
+    vscode.window.showInformationMessage('開始搜尋');
+    setSearchCondition("title", title);
+    let titleArticles: ArticleListItem[] = await ptt.getArticles(board.boardname);
+    vscode.window.showInformationMessage('完成搜尋');
+
+    store.add(board.boardname, titleArticles);
     pttProvider.refresh();
   }));
 

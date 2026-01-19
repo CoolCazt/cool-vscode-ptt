@@ -205,11 +205,110 @@ export async function activate(context: vscode.ExtensionContext) {
     });
   }));
 
-  context.subscriptions.push(vscode.commands.registerCommand('ptt.load-more-article', async (boardname: string) => {
+  context.subscriptions.push(vscode.commands.registerCommand('ptt.jump-to-page', async (boardname: string) => {
+    const currentPage = store.getCurrentPage(boardname);
+    const pageInput = await vscode.window.showInputBox({
+      prompt: '輸入要跳轉的頁碼',
+      placeHolder: `目前在第 ${currentPage + 1} 頁`,
+      validateInput: (value) => {
+        const num = parseInt(value);
+        if (isNaN(num) || num < 1) {
+          return '請輸入有效的頁碼（大於 0 的整數）';
+        }
+        return null;
+      }
+    });
+
+    if (!pageInput) {
+      return;
+    }
+
+    const targetPage = parseInt(pageInput) - 1; // 轉換為 0-based index
+    if (targetPage === currentPage) {
+      vscode.window.showInformationMessage('已在該頁面');
+      return;
+    }
+
+    vscode.window.showInformationMessage(`跳轉至第 ${targetPage + 1} 頁...`);
+    
+    try {
+      const firstSn = store.firstSn(boardname);
+      // 計算目標頁面的文章序號（假設每頁 20 篇）
+      const pageDiff = targetPage - currentPage;
+      const targetSn = firstSn - (pageDiff * 20);
+      
+      const articles = await ptt.getArticles(boardname, targetSn);
+      if (articles.length > 0) {
+        store.clearArticles(boardname);
+        store.add(boardname, articles);
+        store.setCurrentPage(boardname, targetPage);
+        pttProvider.refresh();
+        vscode.window.showInformationMessage(`已切換至第 ${targetPage + 1} 頁`);
+      } else {
+        vscode.window.showInformationMessage('該頁面無文章或超出範圍');
+      }
+    } catch (err) {
+      vscode.window.showErrorMessage('跳轉頁面時發生錯誤');
+      console.error('[PTT] jump-to-page error', err);
+    }
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand('ptt.next-page', async (boardname: string) => {
+    if (store.isEmpty(boardname)) {
+      return;
+    }
+
+    const currentPage = store.getCurrentPage(boardname);
     const lastSn = store.lastSn(boardname);
-    const articles = await ptt.getArticles(boardname, lastSn - 1);
-    store.add(boardname, articles);
-    pttProvider.refresh();
+    vscode.window.showInformationMessage('載入下一頁...');
+    
+    try {
+      const articles = await ptt.getArticles(boardname, lastSn - 1);
+      if (articles.length > 0) {
+        store.clearArticles(boardname);
+        store.add(boardname, articles);
+        store.setCurrentPage(boardname, currentPage + 1);
+        pttProvider.refresh();
+        vscode.window.showInformationMessage(`已切換至第 ${store.getCurrentPage(boardname) + 1} 頁`);
+      } else {
+        vscode.window.showInformationMessage('已到達最後一頁');
+      }
+    } catch (err) {
+      vscode.window.showErrorMessage('載入下一頁時發生錯誤');
+      console.error('[PTT] next-page error', err);
+    }
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand('ptt.previous-page', async (boardname: string) => {
+    if (store.isEmpty(boardname)) {
+      return;
+    }
+
+    const currentPage = store.getCurrentPage(boardname);
+    if (currentPage === 0) {
+      vscode.window.showInformationMessage('已在第一頁');
+      return;
+    }
+
+    const firstSn = store.firstSn(boardname);
+    vscode.window.showInformationMessage('載入上一頁...');
+    
+    try {
+      // 從第一篇文章的序號往後載入
+      const articles = await ptt.getArticles(boardname, firstSn + 19); // PTT 通常一頁顯示20篇
+      if (articles.length > 0) {
+        store.clearArticles(boardname);
+        store.add(boardname, articles);
+        store.setCurrentPage(boardname, currentPage - 1);
+        pttProvider.refresh();
+        vscode.window.showInformationMessage(`已切換至第 ${store.getCurrentPage(boardname) + 1} 頁`);
+      } else {
+        vscode.window.showInformationMessage('載入失敗');
+      }
+    } catch (err) {
+      vscode.window.showErrorMessage('載入上一頁時發生錯誤');
+      console.error('[PTT] previous-page error', err);
+    }
   }));
 
   context.subscriptions.push(vscode.commands.registerCommand('ptt.release-board', async (board: Board) => {
